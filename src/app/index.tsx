@@ -1,98 +1,130 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Camera, CameraView } from "expo-camera";
+import { useEffect, useRef, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+export default function App() {
+  const [hasPermission, setHasPermission] = useState(null);
+  const [torchOn, setTorchOn] = useState(false);
+  const [mode, setMode] = useState("off"); // 'off', 'solid', 'strobe', 'sos'
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
+  const strobeSpeed = 300; // Speed in milliseconds
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setHasPermission(status === "granted");
+    })();
+  }, []);
+
+  const stopBlinking = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      clearTimeout(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    stopBlinking();
+
+    if (mode === "off") {
+      setTorchOn(false);
+    } else if (mode === "solid") {
+      setTorchOn(true);
+    } else if (mode === "strobe") {
+      intervalRef.current = setInterval(() => {
+        setTorchOn((prev) => !prev);
+      }, strobeSpeed);
+    } else if (mode === "sos") {
+      let step = 0;
+      const pattern = [
+        150, 150, 150, 150, 150, 450, 450, 150, 450, 150, 450, 450, 150, 150,
+        150, 150, 150, 1000,
+      ];
+
+      const runSOS = () => {
+        setTorchOn((prev) => !prev);
+        const duration = pattern[step % pattern.length];
+        step++;
+        intervalRef.current = setTimeout(runSOS, duration);
+      };
+      runSOS();
+    }
+
+    return () => stopBlinking();
+  }, [mode]);
+
+  if (hasPermission === null) {
     return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
+      <View style={styles.container}>
+        <Text style={styles.text}>Requesting permission...</Text>
+      </View>
     );
   }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+  if (hasPermission === false) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.text}>No access to camera/flashlight.</Text>
+      </View>
+    );
+  }
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <View style={styles.container}>
+      {/* CameraView handles the torch connection on iOS and Android */}
+      <CameraView
+        style={StyleSheet.absoluteFillObject}
+        enableTorch={torchOn}
+        facing="back"
+      />
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+      <View style={styles.controls}>
+        <Text style={styles.title}>Lumina Flashlight</Text>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        <TouchableOpacity
+          style={[styles.button, mode === "solid" && styles.active]}
+          onPress={() => setMode(mode === "solid" ? "off" : "solid")}
+        >
+          <Text style={styles.btnText}>Solid Light</Text>
+        </TouchableOpacity>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+        <TouchableOpacity
+          style={[styles.button, mode === "strobe" && styles.active]}
+          onPress={() => setMode(mode === "strobe" ? "off" : "strobe")}
+        >
+          <Text style={styles.btnText}>Strobe Light</Text>
+        </TouchableOpacity>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <TouchableOpacity
+          style={[styles.button, mode === "sos" && styles.active]}
+          onPress={() => setMode(mode === "sos" ? "off" : "sos")}
+        >
+          <Text style={styles.btnText}>SOS Mode</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+  controls: { zIndex: 1, width: "85%", alignItems: "center" },
+  title: { color: "#FFF", fontSize: 26, fontWeight: "bold", marginBottom: 40 },
+  button: {
+    backgroundColor: "#222",
+    padding: 18,
+    borderRadius: 12,
+    width: "100%",
+    alignItems: "center",
+    marginVertical: 8,
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  active: { backgroundColor: "#FFD700" },
+  btnText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
+  text: { color: "#FFF" },
 });
